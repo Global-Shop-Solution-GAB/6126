@@ -1,0 +1,246 @@
+﻿Program.Sub.ScreenSU.Start
+
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+F.Intrinsic.Control.If(v.Caller.Hook,<>,31953)
+	Function.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+F.Intrinsic.Control.CallSub(Loaddata)
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_IV_Physical_Inventory_Label.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.LoadData.Start
+F.Intrinsic.Control.SetErrorHandler("LoadData_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSQL.Declare(String)
+v.Local.sPrinter.Declare(STring)
+v.local.sRet.Declare(String)
+v.Local.dAttemptDate.Declare(Date)
+v.Local.iBIRUNID.Declare(Long)
+v.Local.iBILOGID.Declare(Long)
+v.Local.fQTY.Declare(Float)
+v.Local.fTareWeight.Declare(Float)
+v.Local.fGrossWeight.Declare(Float)
+v.Local.fLabelCopyQty.Declare(Float)
+v.Local.bExists.Declare(Boolean)
+V.Local.iCount.Declare(Long)
+v.Local.sPartUM.Declare(String)
+v.Local.fINV_LBS.Declare(Float)
+'get wirelessprinter from transactionmid which is passed on hook
+F.Global.Mobile.GetCustomPrinter(v.Passed.LINE-ID,v.Local.sRet)
+F.Intrinsic.String.Split(v.Local.sRet,"*!*",v.Local.sRet)
+F.Global.Mobile.GetPrinterNamefromID(v.Local.sRet(1),v.Local.sPrinter)
+
+F.Data.Datatable.Create("dtValues",True)
+F.Data.Datatable.AddColumn("dtValues","BIRUNID","String")
+F.Data.Datatable.AddColumn("dtValues","LOGID","String")
+F.Data.Datatable.AddColumn("dtValues","PART","String")
+F.Data.Datatable.AddColumn("dtValues","REV","String")
+F.Data.Datatable.AddColumn("dtValues","LOCN","String")
+F.Data.Datatable.AddColumn("dtValues","SEQ","String")
+F.Data.Datatable.AddColumn("dtValues","QTY_ON_LABEL","FLOAT")
+F.Data.Datatable.AddColumn("dtValues","LBL_CREATE_DATE","DATE")
+F.Data.Datatable.AddColumn("dtValues","LBL_CREATE_TIME","STRING")
+F.Data.Datatable.AddColumn("dtValues","TRANS_TYPE","String")
+F.Data.Datatable.AddColumn("dtValues","LOT","String")
+F.Data.Datatable.AddColumn("dtValues","BIN","String")
+F.Data.Datatable.AddColumn("dtValues","HEAT","String")
+F.Data.Datatable.AddColumn("dtValues","SERIAL","String")
+F.Data.Datatable.AddColumn("dtValues","ON_HAND_QTY","String")
+F.Data.Datatable.AddColumn("dtValues","DESCR","String")
+F.Data.Datatable.AddColumn("dtValues","DESCR2","String")
+F.Data.Datatable.AddColumn("dtValues","GROSS_WEIGHT","FLOAT")
+F.Data.Datatable.AddColumn("dtValues","TARE_WEIGHT","FLOAT")
+F.Data.Datatable.AddColumn("dtValues","INV_LBS","FLOAT")
+F.Data.Datatable.AddColumn("dtValues","REFERENCE","String")
+F.Data.Datatable.AddColumn("dtValues","USER_ID","String")
+F.Data.Datatable.AddColumn("dtValues","INV_UM","String")
+
+
+'get wireless label info from trans ID
+'F.Intrinsic.String.Build("Select PART,LOCN,LOT,BIN,HEAT,SERIAL,ATTEMPTED_DATE,USER_ID From WIRELESS_LABEL Where TRANS_ID = '{0}'",v.Passed.LINE-ID,v.Local.sSQL)
+F.Intrinsic.String.Build("Select Trans_ID As BIRUNID, Trans_Seq As LOGID, PART,Right(Part,3) As REV, LOCN,0 AS QTY_ON_LABEL,' ' As LBL_CREATE_DATE, ' ' As LBL_Create_TIME,TRANS_TYPE,LOT,BIN,HEAT,SERIAL,ON_HAND_QTY,DESCRIPTION AS DESCR,'' AS DESCR2,REFERENCE, USER_ID  From WIRELESS_LABEL Where TRANS_ID = '{0}'",v.Passed.LINE-ID,v.Local.sSQL)
+F.Data.Datatable.CreateFromSQL("dtWIRLABEL","con",v.Local.sSQL)
+Function.Intrinsic.Control.If(v.DataTable.dtWIRLABEL.Exists,=,True,"AND", v.DataTable.dtWIRLABEL.RowCount--,>=,0)
+	'convert attempteddate to actual date value.
+	'F.Intrinsic.Date.ConvertDString(v.DataTable.dtWIR(0).Attempted_Date!Fieldval,"YYYYMMDD",v.Local.dAttemptDate)
+	'build string to query y table based of wireless data table information 
+	'F.Intrinsic.String.Build("Select RUNID as BIRUNID,LOGID,Part,Rev,LOCN,SEQ,QTY_ON_LABEL,LBL_CREATE_DATE,LBL_CREATE_TIME,TRANS_TYPE,LOT,BIN,HEAT,SERIAL,ON_HAND_QTY,DESCR,DESCR2,GROSS_WEIGHT,TARE_WEIGHT,INV_LBS,REFERENCE,USER_ID,UM AS INV_UM FROM Y_IV_PHYS_INV Where Part = '{0}' And LOCN = '{1}' And Lot = '{2}' And Bin = '{3}' And Heat = '{4}' And Serial = '{5}' And USER_ID = '{6}' And LBL_CREATE_DATE = '{7}'",v.DataTable.dtWIR(0).PART!Fieldval,v.DataTable.dtWIR(0).LOCN!Fieldval,v.DataTable.dtWIR(0).LOT!Fieldval,v.DataTable.dtWIR(0).BIN!Fieldval,v.DataTable.dtWIR(0).HEAT!Fieldval,v.DataTable.dtWIR(0).SERIAL!Fieldval,v.DataTable.dtWIR(0).USER_ID!Fieldval,v.Local.dAttemptDate.PervasiveDate,v.Local.sSQL)
+	'Wireless_LINE
+'	Field_3 AS QTY_ON_LABEL/10000
+'	Field_8 AS GROSS_WEIGHT/10000 same as field 9 logic
+'	Field_9 If decimal number Field_9 = Field_9 IF Field_9 Whole Number Field_9/10000 AS TARE_WEIGHT
+'	FIELD_11 is quantity of labels to print so you make that as many rows in your dt.		
+	F.Intrinsic.String.Build("Select Field_3, Field_8, Field_9,Field_11 From WIRELESS_LINE Where Trans_ID='{0}'",v.Passed.LINE-ID,v.Local.sSQL)
+	F.Data.Datatable.CreateFromSQL("dtWIRELINE","con",v.Local.sSQL)
+	Function.Intrinsic.Control.If(v.DataTable.dtWIRELINE.Exists,=,True,"AND", v.DataTable.dtWIRELINE.RowCount--,>=,0)
+		'QTY ON LABEL				
+		f.Intrinsic.String.IsInString(v.DataTable.dtWIRELINE(0).FIELD_3!Fieldval,".",False,v.Local.bExists)
+		Function.Intrinsic.Control.If(v.Local.bExists)
+			v.Local.fQTY.Set(v.DataTable.dtWIRELINE(0).FIELD_3!Fieldval) 
+		Function.Intrinsic.Control.Else
+			f.Intrinsic.Math.Div(v.DataTable.dtWIRELINE(0).FIELD_3!FieldVal,10000,v.Local.fQTY)
+		Function.Intrinsic.Control.EndIf
+		
+		
+		'grossweight
+		f.Intrinsic.String.IsInString(v.DataTable.dtWIRELINE(0).Field_8!Fieldval,".",False,v.Local.bExists)
+		Function.Intrinsic.Control.If(v.Local.bExists)
+			v.Local.fGrossWeight.Set(v.DataTable.dtWIRELINE(0).Field_8!Fieldval) 
+		Function.Intrinsic.Control.Else
+			f.Intrinsic.Math.Div(v.DataTable.dtWIRELINE(0).Field_8!FieldVal,10000,v.Local.fgrossweight)
+		Function.Intrinsic.Control.EndIf
+		
+		'Tare Weight
+		f.Intrinsic.String.IsInString(v.DataTable.dtWIRELINE(0).Field_9!Fieldval,".",False,v.Local.bExists)
+		Function.Intrinsic.Control.If(v.Local.bExists)
+			v.Local.fTareWeight.Set(v.DataTable.dtWIRELINE(0).Field_9!Fieldval) 
+		Function.Intrinsic.Control.Else
+			f.Intrinsic.Math.Div(v.DataTable.dtWIRELINE(0).Field_9!FieldVal,10000,v.Local.fTareWeight)
+		Function.Intrinsic.Control.EndIf		
+		
+		v.Local.fLabelCopyQty.Set(v.DataTable.dtWIRELINE(0).Field_11!Fieldval)					
+		
+		'get um of part 
+		F.Global.Inventory.GetPartInfo(v.DataTable.dtWIRLABEL(0).PART!FieldValTrim,v.DataTable.dtWIRLABEL(0).LOCN!FIeldvalTrim,v.Local.sRet)
+		f.Intrinsic.String.Split(v.Local.sRet,"*!*",v.Local.sret)
+		v.Local.sPartUM.Set(v.Local.sRet(2))		
+		
+		'and get inv_LBS from inventorymst2
+		F.Intrinsic.String.Build("Select LBS From INVENTORY_MST2 Where Part = '{0}' ANd LOCATION = '{1}'",v.DataTable.dtWIRLABEL(0).PART!FieldValTrim,v.DataTable.dtWIRLABEL(0).LOCN!FIeldvalTrim,v.Local.sSQL)
+		F.ODBC.Connection!con.OpenLocalRecordsetRO("rst",v.Local.sSQL)
+		Function.Intrinsic.Control.If(v.ODBC.con!rst.EOF,<>,True)
+			v.Local.fINV_LBS.Set(v.odbc.con!rst.FieldvalTrim!LBS)			
+		Function.Intrinsic.Control.EndIf
+		f.ODBC.con!rst.Close			
+		'add our rows to dtvalues. loop
+		F.Intrinsic.Control.For(v.Local.iCount,1,v.Local.fLabelCopyQty,1)
+			'add row
+			F.Data.Datatable.AddRow("dtValues","BIRUNID",v.Passed.LINE-ID,"LOGID",v.DataTable.dtWIRLABEL(0).LOGID!Fieldval,"PART",v.DataTable.dtWIRLABEL(0).PART!FieldValTrim,"REV",v.DataTable.dtWIRLABEL(0).REV!Fieldvaltrim,"LOCN",v.DataTable.dtWIRLABEL(0).LOCN!Fieldvaltrim,"SEQ",v.Local.iCount,"QTY_ON_LABEL",v.Local.fQTY,"LBL_CREATE_DATE",v.Ambient.date,"LBL_CREATE_TIME",v.Ambient.Now.TComp,"TRANS_TYPE",v.DataTable.dtWIRLABEL(0).TRANS_TYPE!FieldvalTrim,"LOT",v.DataTable.dtWIRLABEL(0).LOT!FIeldvaltrim,"BIN",v.DataTable.dtWIRLABEL(0).BIN!FieldvalTrim,"HEAT",v.DataTable.dtWIRLABEL(0).HEAT!FIeldvaltrim,"SERIAL",v.DataTable.dtWIRLABEL(0).Serial!Fieldvaltrim,"ON_HAND_QTY",v.DataTable.dtWIRLABEL(0).ON_HAND_QTY!FieldVal,"DESCR",v.DataTable.dtWIRLABEL(0).DESCR!Fieldvaltrim,"DESCR2","","GROSS_WEIGHT",v.Local.fGrossWeight,"TARE_WEIGHT",v.Local.fTareWeight,"INV_LBS",v.Local.fINV_LBS,"REFERENCE",v.DataTable.dtWIRLABEL(0).REFERENCE!Fieldvaltrim,"USER_ID",v.DataTable.dtWIRLABEL(0).USER_ID!FIeldvaltrim,"INV_UM",v.Local.sPartUM)		
+		F.Intrinsic.Control.Next(v.Local.iCount)		
+	Function.Intrinsic.Control.EndIf	
+	
+	'F.Data.Datatable.CreateFromSQL("dtValues","con",v.Local.sSql)
+	Function.Intrinsic.Control.If(v.DataTable.dtValues.Exists,=,True,"AND",v.DataTable.dtValues.RowCount--,>=,0)  	
+     	F.Global.BI.PrintCodeSoftLabelFromDatatable(v.DataTable.dtValues(0).BIRUNID!Fieldval,v.DataTable.dtValues(0).LOGID!Fieldval,"dtValues",v.Local.sPrinter,True,"IV_PHY_INV_LBL_6126.lab",True)
+	Function.Intrinsic.Control.Else
+		Function.Intrinsic.Debug.SetLA("BIR_IV_PHY_INV_LBL_6126.g2u did not find any table records based on Transaction ID information")
+		Function.Intrinsic.Debug.SetLA("SQL Query:")
+		Function.Intrinsic.Debug.SetLA(v.Local.sSql)		
+	Function.Intrinsic.Control.EndIf	
+Function.Intrinsic.Control.EndIf
+
+
+
+
+Function.Intrinsic.Control.CallSub(Unload)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("LoadData_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_IV_Physical_Inventory_Label.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.LoadData.End
+
+Program.Sub.CallBI.Start
+F.Intrinsic.Control.SetErrorHandler("CallBI_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.iRet.Declare(Long)
+
+F.Global.BI.RunReportPreProcessor(V.Global.iBIRunID,V.Global.iBILogID,"","","",-1,True,"",-1,"",-1,"","",v.Local.iRet)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("CallBI_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_IV_Physical_Inventory_Label.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.CallBI.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!con.Close
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_IV_Physical_Inventory_Label.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	f.Intrinsic.Debug.SetLA(v.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Unload.End
+
+'Program.Sub.GetPrinter.Start
+'F.Intrinsic.Control.SetErrorHandler("GetPrinter_Err")
+'F.Intrinsic.Control.ClearErrors
+
+'V.Local.sError.Declare(String)
+'v.Local.sSQl.Declare(String)
+'v.Local.sTransID.Declare(String)
+'v.Local.sLabelPrinter.Declare(String)
+'F.Intrinsic.String.Split(v.Passed.DATA-GAB-4,"@!@",v.Local.sTransID)
+'F.Intrinsic.String.Split(v.Local.sTransID(0),"##",v.Local.sTransID)
+'v.Local.sTransID.Set(v.Local.sTransID(1))
+'F.Intrinsic.String.Build("Select Default_Printer, Label_Printer From Wireless_HDR Where Trans_ID = '{0}'",v.Local.sTransID,v.Local.sSQl)
+'F.ODBC.Connection!con.OpenLocalRecordset("rst",v.Local.sSQl)
+'Function.Intrinsic.Control.If(v.ODBC.con!rst.EOF,<>,True)
+'	
+'Function.Intrinsic.Control.EndIf
+
+'F.Intrinsic.Control.ExitSub
+
+'F.Intrinsic.Control.Label("GetPrinter_Err")
+'F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+'	Function.Intrinsic.String.Concat("Project: BIR_IV_Physical_Inventory_Label.gu2",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+'	f.Intrinsic.Debug.SetLA(v.Local.sError)
+'	F.Intrinsic.Control.CallSub(Unload)
+'Function.Intrinsic.Control.EndIf
+'Program.Sub.GetPrinter.End
+
+Program.Sub.Comments.Start
+${$0$}$SF_Issue_Drop$}$Mitch$}$4/3/2014
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$Issue/Drop Material label
+${$5$}$2.0.0.0$}$2
+${$6$}$ttrojacek$}$20201009082442702$}$1REoGSe/f0Yb3cFf+NC/HUSyrHyqoDF386v7kSKUG/W3pye4M2pHfWADTOiSrHRxxBRXpR7G9DXnlsQliocRgQ==
+Program.Sub.Comments.End
+
